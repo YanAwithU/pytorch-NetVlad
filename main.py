@@ -44,18 +44,18 @@ parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SG
 parser.add_argument('--nocuda', action='store_true', help='Dont use cuda')
 parser.add_argument('--threads', type=int, default=8, help='Number of threads for each data loader to use')
 parser.add_argument('--seed', type=int, default=123, help='Random seed to use.')
-parser.add_argument('--dataPath', type=str, default='/nfs/ibrahimi/data/', help='Path for centroid data.')
-parser.add_argument('--runsPath', type=str, default='/nfs/ibrahimi/runs/', help='Path to save runs to.')
+parser.add_argument('--dataPath', type=str, default='/home/syh/zz/data/', help='Path for centroid data.')
+parser.add_argument('--runsPath', type=str, default='/home/syh/zz/runs/', help='Path to save runs to.')
 parser.add_argument('--savePath', type=str, default='checkpoints', 
         help='Path to save checkpoints to in logdir. Default=checkpoints/')
-parser.add_argument('--cachePath', type=str, default=environ['TMPDIR'], help='Path to save cache to.')
+parser.add_argument('--cachePath', type=str, default="/home/syh/zz", help='Path to save cache to.')
 parser.add_argument('--resume', type=str, default='', help='Path to load checkpoint from, for resuming training or testing.')
 parser.add_argument('--ckpt', type=str, default='latest', 
         help='Resume from latest or best checkpoint.', choices=['latest', 'best'])
 parser.add_argument('--evalEvery', type=int, default=1, 
         help='Do a validation set run, and save, every N epochs.')
 parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping. 0 is off.')
-parser.add_argument('--dataset', type=str, default='pittsburgh', 
+parser.add_argument('--dataset', type=str, default='naver', 
         help='Dataset to use', choices=['pittsburgh'])
 parser.add_argument('--arch', type=str, default='vgg16', 
         help='basenetwork to use', choices=['vgg16', 'alexnet'])
@@ -65,9 +65,12 @@ parser.add_argument('--pooling', type=str, default='netvlad', help='type of pool
 parser.add_argument('--num_clusters', type=int, default=64, help='Number of NetVlad clusters. Default=64')
 parser.add_argument('--margin', type=float, default=0.1, help='Margin for triplet loss. Default=0.1')
 parser.add_argument('--split', type=str, default='val', help='Data split to use for testing. Default is val', 
-        choices=['test', 'test250k', 'train', 'val'])
+        choices=['test', 'train', 'val'])
 parser.add_argument('--fromscratch', action='store_true', help='Train from scratch rather than using pretrained models')
+parser.add_argument('--naver', type=str, default='g1', help='gg')
+parser.add_argument('--gpu', type=int, default=0, help='gg')
 
+import os
 def train(epoch):
     epoch_loss = 0
     startIter = 1 # keep track of batch iter across subsets for logging
@@ -86,6 +89,8 @@ def train(epoch):
         print('====> Building Cache')
         model.eval()
         train_set.cache = join(opt.cachePath, train_set.whichSet + '_feat_cache.hdf5')
+        if os.path.exists(train_set.cache):
+            os.remove(train_set.cache)
         with h5py.File(train_set.cache, mode='w') as h5: 
             pool_size = encoder_dim
             if opt.pooling.lower() == 'netvlad': pool_size *= opt.num_clusters
@@ -115,7 +120,7 @@ def train(epoch):
             # some reshaping to put query, pos, negs in a single (N, 3, H, W) tensor
             # where N = batchSize * (nQuery + nPos + nNeg)
             if query is None: continue # in case we get an empty batch
-
+            print(indices)
             B, C, H, W = query.shape
             nNeg = torch.sum(negCounts)
             input = torch.cat([query, positives, negatives])
@@ -293,10 +298,10 @@ class L2Norm(nn.Module):
 
     def forward(self, input):
         return F.normalize(input, p=2, dim=self.dim)
-
+    
 if __name__ == "__main__":
     opt = parser.parse_args()
-
+    torch.cuda.set_device(opt.gpu)
     restore_var = ['lr', 'lrStep', 'lrGamma', 'weightDecay', 'momentum', 
             'runsPath', 'savePath', 'arch', 'num_clusters', 'pooling', 'optim',
             'margin', 'seed', 'patience']
@@ -325,6 +330,9 @@ if __name__ == "__main__":
 
     if opt.dataset.lower() == 'pittsburgh':
         import pittsburgh as dataset
+    elif opt.dataset.lower() == 'naver':
+        import naverindoor as dataset
+        dataset.naverindoorinit(opt)
     else:
         raise Exception('Unknown dataset')
 
@@ -356,9 +364,6 @@ if __name__ == "__main__":
         if opt.split.lower() == 'test':
             whole_test_set = dataset.get_whole_test_set()
             print('===> Evaluating on test set')
-        elif opt.split.lower() == 'test250k':
-            whole_test_set = dataset.get_250k_test_set()
-            print('===> Evaluating on test250k set')
         elif opt.split.lower() == 'train':
             whole_test_set = dataset.get_whole_training_set()
             print('===> Evaluating on train set')
